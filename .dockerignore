@@ -1,0 +1,7 @@
+deployments
+coverage.out
+README.md
+.dockerignore
+.gitignore
+bin
+Makefile

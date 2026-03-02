@@ -1,0 +1,23 @@
+
+server:
+  port: ":8081"
+  env: "development"
+
+database:
+  dsn: "postgres://user:password@localhost:5432/mydb?sslmode=disable"
+  max_open_conns: 25
+  max_idle_conns: 5
+
+observability:
+  enabled: true
+  otlp_protocol: grpc  # Use 'grpc' for remote OTLP collector, 'stdout' for local development
+  otlp_endpoint: "localhost:4317"
+  service_name: "crm-api"
+  environment: "development"
+  service_version: "1.0.0"
+  metrics_interval: 60s
+  enable_metrics: true
+  enable_tracing: true
+  enable_logging: true
+  log_level: "info"  # Options: debug, info, warn, error
+  trace_sample_rate: 0.1   # Sample 10% of traces in production
