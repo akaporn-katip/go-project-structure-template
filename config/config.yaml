@@ -19,5 +19,5 @@ observability:
   enable_metrics: true
   enable_tracing: true
   enable_logging: true
-  log_level: "info"  # Options: debug, info, warn, error
+  log_level: "debug"  # Options: debug, info, warn, error
   trace_sample_rate: 0.1   # Sample 10% of traces in production

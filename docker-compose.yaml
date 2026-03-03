@@ -1,53 +1,82 @@
-
-
 services:
-  jaeger:
-    image: jaegertracing/all-in-one:latest
-    container_name: jaeger
-    environment:
-      COLLECTOR_OTLP_ENABLED: true
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
     ports:
-      - 16686:16686 # ui
-      # - 4317:4317 # otlp grpc receiver
-      # - 4318:4318
-      # - 5778:5778
-      # - 9411:9411
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "http://localhost:16686"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
-      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
     volumes:
-      - ./otel/prometheus-config.yml:/etc/prometheus/prometheus.yml
-      # - prometheus_data:/prometheus
-    ports:
-      - "9090:9090"
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "http://localhost:9090"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - loki:/loki
+    networks:
+      - otelnet
 
-  otel-collector:
-    image: otel/opentelemetry-collector-contrib:latest
-    container_name: otel-collector
-    command: ["--config=/etc/otel-collector-config.yaml"]
+  tempo:
+    image: grafana/tempo:latest
+    container_name: tempo
+    command: [ "-config.file=/etc/tempo.yaml" ]
     volumes:
-      - ./otel/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+      - ./otel/tempo-config.yaml:/etc/tempo.yaml
+      - tempo:/var/tempo
     ports:
-      - "4317:4317"    # OTLP gRPC receiver
-      - "4318:4318"    # OTLP HTTP receiver
-      - "8888:8888"    # Prometheus metrics exposed by collector
-      - "8889:8889"    # Prometheus exporter
+      - "3200:3200"   # Tempo UI/API
+      - "4317"        # OTLP gRPC (internal for Alloy)
+    networks:
+      - otelnet
+    
+
+  mimir:
+    image: grafana/mimir:latest
+    container_name: mimir
+    command: [ "-config.file=/etc/mimir.yaml" ]
+    ports:
+      - "9009:9009"
+    volumes:
+      - ./otel/mimir-config.yaml:/etc/mimir.yaml
+      - mimir:/data
+    networks:
+      - otelnet
+
+  alloy:
+    image: grafana/alloy:latest
+    container_name: alloy
+    ports:
+      - "12345:12345" # UI
+      - "4317:4317"   # OTLP gRPC (Incoming from your Go/Python apps)
+      - "4318:4318"   # OTLP HTTP (Incoming from your Go/Python apps)    
+    volumes:
+      - ./otel/alloy-config.river:/etc/alloy/config.alloy:ro
+    command: run --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
+    networks:
+      - otelnet
     depends_on:
-      - jaeger
-      - prometheus
+      - loki
+      - tempo
+      - mimir
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    volumes:
+      - grafana-storage:/var/lib/grafana
+      - ./otel/grafana-datasource.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
+    networks:
+      - otelnet
+
+    depends_on:
+      - loki
+      - tempo
+      - mimir
+
+volumes:
+  loki:
+  tempo:
+  mimir:
+  grafana-storage:
+
+networks:
+  otelnet:

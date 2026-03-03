@@ -1,0 +1,38 @@
+target: all
+
+multitenancy_enabled: false
+
+server:
+  http_listen_port: 9009
+# 1. Blocks Storage (Where the actual metric chunks go)
+blocks_storage:
+  backend: filesystem
+  bucket_store:
+    sync_dir: /data/tsdb-sync
+  filesystem:
+    dir: /data/blocks
+  tsdb:
+    dir: /data/tsdb
+
+# 2. Ruler Storage (Where alerting/recording rules go)
+ruler_storage:
+  backend: filesystem
+  filesystem:
+    dir: /data/rules
+
+# 3. Alertmanager Storage (Where alert configurations go)
+alertmanager_storage:
+  backend: filesystem
+  filesystem:
+    dir: /data/alerts
+
+# 4. Working Directories
+compactor:
+  data_dir: /data/compactor
+
+alertmanager:
+  data_dir: /data/alertmanager-state
+
+ingester:
+  ring:
+    replication_factor: 1
