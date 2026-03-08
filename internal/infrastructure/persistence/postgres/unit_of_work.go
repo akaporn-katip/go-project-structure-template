@@ -85,9 +85,97 @@ func (u *UnitOfWork) CreateTransaction() Transaction {
 	}
 }
 
-type TxFunction[T any] = func(ctx context.Context, repos repositories.Repositories) (*T, error)
+func (u *UnitOfWork) ExecuteTx(ctx context.Context, fn unitofwork.TxFunction) error {
+	start := time.Now()
+	tx := u.CreateTransaction()
 
-func WithTx[T any](ctx context.Context, fn TxFunction[T], uow unitofwork.UnitOfWork) (*T, error) {
+	_, span := u.tracer.Start(ctx, "UnitOfWork.WithTx",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			attribute.String("db.system", "postgresql"),
+			attribute.String("transaction.type", "read_write"),
+		),
+	)
+	defer span.End()
+
+	span.AddEvent("begin_transaction")
+	if err := tx.Begin(ctx); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to begin transaction")
+		return err
+	}
+
+	span.AddEvent("executing_function")
+
+	defer func() {
+		if p := recover(); p != nil {
+			tx.Rollback(ctx)
+			panic(p)
+		}
+	}()
+
+	err := fn(ctx, tx.CreatePostgresRepositoriesWithTx(ctx))
+	if err != nil {
+		span.AddEvent("function_error", trace.WithAttributes(
+			attribute.String("error.message", err.Error()),
+		))
+		span.RecordError(err)
+
+		span.AddEvent("attempting_rollback")
+		if rbErr := tx.Rollback(ctx); rbErr != nil {
+			span.AddEvent("rollback_failed", trace.WithAttributes(
+				attribute.String("rollback.error", rbErr.Error()),
+			))
+			span.SetStatus(codes.Error, "transaction failed and rollback failed")
+
+			// Record duration even on error
+			duration := time.Since(start).Milliseconds()
+			u.transactionDuration.Record(ctx, float64(duration),
+				metric.WithAttributes(
+					attribute.String("db.system", "postgresql"),
+					attribute.String("outcome", "error"),
+				),
+			)
+
+			return fmt.Errorf("error: %v, rollback error: %v", err, rbErr)
+		}
+
+		span.AddEvent("rollback_successful")
+		span.SetStatus(codes.Error, "transaction rolled back due to error")
+		return err
+	}
+
+	span.AddEvent("attempting_commit")
+	err = tx.Commit(ctx)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to commit transaction")
+
+		duration := time.Since(start).Milliseconds()
+		u.transactionDuration.Record(ctx, float64(duration),
+			metric.WithAttributes(
+				attribute.String("db.system", "postgresql"),
+				attribute.String("outcome", "commit_failed"),
+			),
+		)
+
+		return err
+	}
+
+	span.AddEvent("commit_successful")
+	span.SetStatus(codes.Ok, "transaction completed successfully")
+
+	duration := time.Since(start).Milliseconds()
+	u.transactionDuration.Record(ctx, float64(duration),
+		metric.WithAttributes(
+			attribute.String("db.system", "postgresql"),
+			attribute.String("outcome", "committed"),
+		),
+	)
+	return nil
+}
+
+func WithTx[T any](ctx context.Context, fn unitofwork.TxFunctionWithResult[T], uow unitofwork.UnitOfWork) (*T, error) {
 	start := time.Now()
 
 	concreteUow, ok := uow.(*UnitOfWork)
@@ -179,7 +267,7 @@ func WithTx[T any](ctx context.Context, fn TxFunction[T], uow unitofwork.UnitOfW
 			attribute.String("outcome", "committed"),
 		),
 	)
-	return rs, nil
+	return &rs, nil
 }
 
 func (uow *UnitOfWork) GetRepositories() repositories.Repositories {

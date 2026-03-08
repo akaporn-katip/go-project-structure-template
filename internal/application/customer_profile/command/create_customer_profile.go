@@ -6,7 +6,6 @@ import (
 	"github.com/akaporn-katip/go-project-structure-template/internal/application/repositories"
 	"github.com/akaporn-katip/go-project-structure-template/internal/application/unitofwork"
 	"github.com/akaporn-katip/go-project-structure-template/internal/domain/customerprofile"
-	"github.com/akaporn-katip/go-project-structure-template/internal/infrastructure/persistence/postgres"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -34,12 +33,11 @@ func NewCreateCustomerProfileHandler(uow unitofwork.UnitOfWork) *CreateCustomerP
 func (c *CreateCustomerProfileHandler) Handle(ctx context.Context, cmd CreateCustomerProfileCommand) (*customerprofile.CustomerID, error) {
 	_, span := c.tracer.Start(ctx, "CreateCustomerProfileHandler.Handle", trace.WithSpanKind(trace.SpanKindInternal))
 	defer span.End()
-	return postgres.WithTx(ctx, func(ctx context.Context, repos repositories.Repositories) (*customerprofile.CustomerID, error) {
+	return unitofwork.ExecuteTx(ctx, c.uow, func(ctx context.Context, repos repositories.Repositories) (*customerprofile.CustomerID, error) {
 		repo := repos.GetCustomerProfileRepository()
-
 		svc := customerprofile.NewService(repo)
 		return do(ctx, repo, svc, cmd)
-	}, c.uow)
+	})
 }
 
 func do(ctx context.Context, repos customerprofile.Repository, svc *customerprofile.Service, cmd CreateCustomerProfileCommand) (*customerprofile.CustomerID, error) {
