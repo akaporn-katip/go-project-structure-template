@@ -20,6 +20,7 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/jmoiron/sqlx"
 
+	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -141,7 +142,9 @@ func Serve(configPath string) {
 	// ====================================================================
 	// Initialize Database
 	// ====================================================================
-	db, err := setupInMemoryDB()
+	// db, err := setupInMemoryDB()
+
+	db, err := sqlx.Connect("postgres", cfg.Database.DSN)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}

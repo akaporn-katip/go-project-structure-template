@@ -3,6 +3,7 @@ package command
 import (
 	"context"
 
+	"github.com/akaporn-katip/go-project-structure-template/internal/application/repositories"
 	"github.com/akaporn-katip/go-project-structure-template/internal/application/unitofwork"
 	"github.com/akaporn-katip/go-project-structure-template/internal/domain/customerprofile"
 	"github.com/akaporn-katip/go-project-structure-template/internal/infrastructure/persistence/postgres"
@@ -33,10 +34,11 @@ func NewCreateCustomerProfileHandler(uow unitofwork.UnitOfWork) *CreateCustomerP
 func (c *CreateCustomerProfileHandler) Handle(ctx context.Context, cmd CreateCustomerProfileCommand) (*customerprofile.CustomerID, error) {
 	_, span := c.tracer.Start(ctx, "CreateCustomerProfileHandler.Handle", trace.WithSpanKind(trace.SpanKindInternal))
 	defer span.End()
-	return postgres.WithTx(ctx, func(ctx context.Context) (*customerprofile.CustomerID, error) {
-		repos := c.uow.GetCustomerProfileRepository()
-		svc := customerprofile.NewService(repos)
-		return do(ctx, repos, svc, cmd)
+	return postgres.WithTx(ctx, func(ctx context.Context, repos repositories.Repositories) (*customerprofile.CustomerID, error) {
+		repo := repos.GetCustomerProfileRepository()
+
+		svc := customerprofile.NewService(repo)
+		return do(ctx, repo, svc, cmd)
 	}, c.uow)
 }
 

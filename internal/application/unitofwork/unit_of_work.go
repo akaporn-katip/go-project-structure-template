@@ -1,7 +1,7 @@
 package unitofwork
 
-import "github.com/akaporn-katip/go-project-structure-template/internal/domain/customerprofile"
+import "github.com/akaporn-katip/go-project-structure-template/internal/application/repositories"
 
 type UnitOfWork interface {
-	GetCustomerProfileRepository() customerprofile.Repository
+	GetRepositories() repositories.Repositories
 }

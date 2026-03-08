@@ -47,6 +47,10 @@ func (m *MockDatabaseExecutor) ExecContext(ctx context.Context, query string, ar
 	return nil, nil
 }
 
+func (m *MockDatabaseExecutor) BindNamed(query string, arg interface{}) (string, []interface{}, error) {
+	return "", nil, nil
+}
+
 func TestFindByEmail_Success(t *testing.T) {
 	// Arrange
 	expectedCustomer := &CustomerProfileModel{

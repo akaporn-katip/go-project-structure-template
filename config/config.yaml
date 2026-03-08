@@ -8,7 +8,7 @@ database:
   # dsn: "sqlite3://db.sqlite"
 
   type: "postgres" # postgres , mongodb , sqlite3
-  dsn: "postgres://user:password@pg_migrate_db:5432/myapp_db?sslmode=disable"
+  dsn: "postgres://user:password@localhost:5432/myapp_db?sslmode=disable"
 
   # type: "mongodb"
   # dsn: "mongodb://admin:password@localhost:27017/app?authSource=admin"

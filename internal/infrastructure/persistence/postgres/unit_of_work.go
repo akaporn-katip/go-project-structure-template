@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/akaporn-katip/go-project-structure-template/internal/application/repositories"
 	"github.com/akaporn-katip/go-project-structure-template/internal/application/unitofwork"
-	"github.com/akaporn-katip/go-project-structure-template/internal/domain/customerprofile"
 	"github.com/jmoiron/sqlx"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -16,12 +16,10 @@ import (
 )
 
 type UnitOfWork struct {
-	tx     *sqlx.Tx
-	db     *sqlx.DB
-	tracer trace.Tracer
-
-	// metrics
+	unitofwork.UnitOfWork
+	db                   *sqlx.DB
 	meter                metric.Meter
+	tracer               trace.Tracer
 	transactionCounter   metric.Int64Counter
 	transactionDuration  metric.Float64Histogram
 	transactionRollbacks metric.Int64Counter
@@ -81,46 +79,59 @@ func NewUnitOfWork(db *sqlx.DB, meter metric.Meter) (*UnitOfWork, error) {
 	}, nil
 }
 
-func (uow *UnitOfWork) Begin(ctx context.Context) error {
-	if uow.tx != nil {
+type Transaction struct {
+	uow *UnitOfWork
+	tx  *sqlx.Tx
+}
+
+func (u *UnitOfWork) CreateTransaction() Transaction {
+	return Transaction{
+		uow: u,
+	}
+}
+
+func (t *Transaction) Begin(ctx context.Context) error {
+	if t.tx != nil {
 		return fmt.Errorf("transaction already exists")
 	}
 
 	// Increment active transactions
-	uow.activeTransactions.Add(ctx, 1,
+	t.uow.activeTransactions.Add(ctx, 1,
 		metric.WithAttributes(
 			attribute.String("db.system", "postgresql"),
 		),
 	)
 
-	tx, err := uow.db.BeginTxx(ctx, nil)
+	tx, err := t.uow.db.BeginTxx(ctx, nil)
 	if err != nil {
-		uow.activeTransactions.Add(ctx, -1)
+		t.uow.activeTransactions.Add(ctx, -1, metric.WithAttributes(
+			attribute.String("db.system", "postgresql"),
+		))
 
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 
-	uow.tx = tx
+	t.tx = tx
 	return nil
 }
 
-func (uow *UnitOfWork) Commit(ctx context.Context) error {
-	if uow.tx == nil {
+func (t *Transaction) Commit(ctx context.Context) error {
+	if t.tx == nil {
 		return fmt.Errorf("no active transaction")
 	}
 
-	err := uow.tx.Commit()
-	uow.tx = nil
+	err := t.tx.Commit()
+	t.tx = nil
 
 	// Decrement active transactions
-	uow.activeTransactions.Add(ctx, -1,
+	t.uow.activeTransactions.Add(ctx, -1,
 		metric.WithAttributes(
 			attribute.String("db.system", "postgresql"),
 		),
 	)
 
 	// Record transaction completion
-	uow.transactionCounter.Add(ctx, 1,
+	t.uow.transactionCounter.Add(ctx, 1,
 		metric.WithAttributes(
 			attribute.String("db.system", "postgresql"),
 			attribute.String("outcome", "committed"),
@@ -134,30 +145,30 @@ func (uow *UnitOfWork) Commit(ctx context.Context) error {
 	return nil
 }
 
-func (uow *UnitOfWork) Rollback(ctx context.Context) error {
-	if uow.tx == nil {
+func (t *Transaction) Rollback(ctx context.Context) error {
+	if t.tx == nil {
 		return nil
 	}
 
-	err := uow.tx.Rollback()
-	uow.tx = nil
+	err := t.tx.Rollback()
+	t.tx = nil
 
 	// Decrement active transactions
-	uow.activeTransactions.Add(ctx, -1,
+	t.uow.activeTransactions.Add(ctx, -1,
 		metric.WithAttributes(
 			attribute.String("db.system", "postgresql"),
 		),
 	)
 
 	// Record rollback
-	uow.transactionRollbacks.Add(ctx, 1,
+	t.uow.transactionRollbacks.Add(ctx, 1,
 		metric.WithAttributes(
 			attribute.String("db.system", "postgresql"),
 		),
 	)
 
 	// Record transaction completion
-	uow.transactionCounter.Add(ctx, 1,
+	t.uow.transactionCounter.Add(ctx, 1,
 		metric.WithAttributes(
 			attribute.String("db.system", "postgresql"),
 			attribute.String("outcome", "rolled_back"),
@@ -171,37 +182,20 @@ func (uow *UnitOfWork) Rollback(ctx context.Context) error {
 	return nil
 }
 
-func (uow *UnitOfWork) WithTx(ctx context.Context, fn func(ctx context.Context) error) error {
-	if err := uow.Begin(ctx); err != nil {
-		return err
-	}
-
-	defer func() {
-		if p := recover(); p != nil {
-			uow.Rollback(ctx)
-			panic(p)
-		}
-	}()
-
-	if err := fn(ctx); err != nil {
-		if rbErr := uow.Rollback(ctx); rbErr != nil {
-			return fmt.Errorf("error: %v, rollback error: %v", err, rbErr)
-		}
-
-		return err
-	}
-
-	return uow.Commit(ctx)
+func (t *Transaction) CreatePostgresRepositoriesWithTx(ctx context.Context) repositories.Repositories {
+	return NewPostgresRepositories(t.tx, t.uow.meter)
 }
 
-type TxFunction[T any] = func(ctx context.Context) (*T, error)
+type TxFunction[T any] = func(ctx context.Context, repos repositories.Repositories) (*T, error)
 
 func WithTx[T any](ctx context.Context, fn TxFunction[T], uow unitofwork.UnitOfWork) (*T, error) {
 	start := time.Now()
+
 	concreteUow, ok := uow.(*UnitOfWork)
 	if !ok {
-		return nil, fmt.Errorf("invalid type: %T", uow)
+		return nil, fmt.Errorf("infrastructure mismatch: expected postgres.UnitOfWork")
 	}
+	tx := concreteUow.CreateTransaction()
 
 	_, span := concreteUow.tracer.Start(ctx, "UnitOfWork.WithTx",
 		trace.WithSpanKind(trace.SpanKindClient),
@@ -213,7 +207,7 @@ func WithTx[T any](ctx context.Context, fn TxFunction[T], uow unitofwork.UnitOfW
 	defer span.End()
 
 	span.AddEvent("begin_transaction")
-	if err := concreteUow.Begin(ctx); err != nil {
+	if err := tx.Begin(ctx); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to begin transaction")
 		return nil, err
@@ -223,12 +217,12 @@ func WithTx[T any](ctx context.Context, fn TxFunction[T], uow unitofwork.UnitOfW
 
 	defer func() {
 		if p := recover(); p != nil {
-			concreteUow.Rollback(ctx)
+			tx.Rollback(ctx)
 			panic(p)
 		}
 	}()
 
-	rs, err := fn(ctx)
+	rs, err := fn(ctx, tx.CreatePostgresRepositoriesWithTx(ctx))
 	if err != nil {
 		span.AddEvent("function_error", trace.WithAttributes(
 			attribute.String("error.message", err.Error()),
@@ -236,7 +230,7 @@ func WithTx[T any](ctx context.Context, fn TxFunction[T], uow unitofwork.UnitOfW
 		span.RecordError(err)
 
 		span.AddEvent("attempting_rollback")
-		if rbErr := concreteUow.Rollback(ctx); rbErr != nil {
+		if rbErr := tx.Rollback(ctx); rbErr != nil {
 			span.AddEvent("rollback_failed", trace.WithAttributes(
 				attribute.String("rollback.error", rbErr.Error()),
 			))
@@ -260,7 +254,7 @@ func WithTx[T any](ctx context.Context, fn TxFunction[T], uow unitofwork.UnitOfW
 	}
 
 	span.AddEvent("attempting_commit")
-	err = concreteUow.Commit(ctx)
+	err = tx.Commit(ctx)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to commit transaction")
@@ -289,15 +283,6 @@ func WithTx[T any](ctx context.Context, fn TxFunction[T], uow unitofwork.UnitOfW
 	return rs, nil
 }
 
-func (uow *UnitOfWork) GetCustomerProfileRepository() customerprofile.Repository {
-	executor := uow.getDb()
-	wrapper := NewDatabaseWrapper(executor, uow.meter)
-	return NewCustomerProfileRespository(wrapper)
-}
-
-func (uow *UnitOfWork) getDb() DatabaseExecutor {
-	if uow.tx != nil {
-		return uow.tx
-	}
-	return uow.db
+func (uow *UnitOfWork) GetRepositories() repositories.Repositories {
+	return NewPostgresRepositories(uow.db, uow.meter)
 }

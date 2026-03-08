@@ -705,6 +705,19 @@ func (d DateOfBirth) String() string {
 	}
 }
 
+func (d DateOfBirth) ISOString() string {
+	switch d.precision {
+	case YearOnly:
+		return fmt.Sprintf("%d", d.date.Year())
+	case MonthYear:
+		return d.date.Format("200601")
+	case FullDate:
+		return d.date.Format("20060102")
+	default:
+		return d.date.String()
+	}
+}
+
 type Email struct {
 	value string
 }

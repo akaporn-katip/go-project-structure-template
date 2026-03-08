@@ -170,6 +170,10 @@ func (pw *DatabaseWrapper) ExecContext(ctx context.Context, query string, args .
 	return rs, nil
 }
 
+func (pw *DatabaseWrapper) BindNamed(query string, arg interface{}) (string, []interface{}, error) {
+	return pw.db.BindNamed(query, arg)
+}
+
 func extractSQLOperationAndTable(query string) (operation, table string) {
 	q := strings.TrimSpace(query)
 	if q == "" {

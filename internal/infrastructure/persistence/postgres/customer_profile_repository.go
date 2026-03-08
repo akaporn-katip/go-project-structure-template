@@ -39,13 +39,13 @@ func NewCustomerProfileRespository(db DatabaseExecutor) *CustomerProfileReposito
 func (cp *CustomerProfileRepository) Create(context context.Context, customerProfile *customerprofile.CustomerProfile) error {
 	_, span := cp.tracer.Start(context, "CustomerProfileRepository.Create")
 	defer span.End()
-	_, err := cp.db.ExecContext(context, "INSERT INTO customer_profile (id, email, first_name, last_name, title, date_of_birth, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+	_, err := cp.db.ExecContext(context, "INSERT INTO customer_profile (id, email, first_name, last_name, title, date_of_birth, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
 		customerProfile.ID().String(),
 		customerProfile.Email().String(),
 		customerProfile.Firstname(),
 		customerProfile.Lastname(),
 		customerProfile.Title(),
-		customerProfile.DateOfBirth().String(),
+		customerProfile.DateOfBirth().ISOString(),
 		customerProfile.CreatedAt(),
 		customerProfile.UpdatedAt(),
 	)

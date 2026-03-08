@@ -2,833 +2,181 @@ package postgres
 
 import (
 	"context"
+	"errors"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/akaporn-katip/go-project-structure-template/internal/application/repositories"
 	"github.com/jmoiron/sqlx"
-	_ "github.com/mattn/go-sqlite3"
-	"go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/metric/noop"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
-// setupInMemoryDB creates a SQLite in-memory database for testing
-func setupInMemoryDB(t *testing.T) *sqlx.DB {
-	db, err := sqlx.Connect("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatalf("failed to connect to in-memory database: %v", err)
-	}
+func TestWithTx(t *testing.T) {
+	// 1. Setup Mock DB
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	sqlxDB := sqlx.NewDb(mockDB, "postgres")
 
-	// Create test schema
-	schema := `
-	CREATE TABLE customer_profile (
-		id TEXT PRIMARY KEY,
-		title TEXT,
-		first_name TEXT,
-		last_name TEXT,
-		email TEXT UNIQUE,
-		date_of_birth TEXT,
-		created_at DATETIME,
-		updated_at DATETIME
-	);`
+	// 2. Setup Mock Metrics (using SDK Reader to verify counts)
+	reader := metric.NewManualReader()
+	provider := metric.NewMeterProvider(metric.WithReader(reader))
+	testMeter := provider.Meter("test")
 
-	_, err = db.Exec(schema)
-	if err != nil {
-		t.Fatalf("failed to create schema: %v", err)
-	}
+	// 3. Initialize UOW
+	uow, err := NewUnitOfWork(sqlxDB, testMeter)
+	require.NoError(t, err)
 
-	return db
-}
+	t.Run("Successful Commit", func(t *testing.T) {
+		ctx := context.Background()
 
-// getMeterForTesting returns a no-op meter for testing
-func getMeterForTesting(t *testing.T) metric.Meter {
-	meterProvider := noop.NewMeterProvider()
-	return meterProvider.Meter("test")
-}
+		// Expectations
+		mock.ExpectBegin()
+		mock.ExpectCommit()
 
-// TestUnitOfWork_Begin tests transaction begin
-func TestUnitOfWork_Begin(t *testing.T) {
-	db := setupInMemoryDB(t)
-	defer db.Close()
+		res, err := WithTx(ctx, func(ctx context.Context, repos repositories.Repositories) (*string, error) {
+			s := "success"
+			return &s, nil
+		}, uow)
 
-	meter := getMeterForTesting(t)
-	uow, err := NewUnitOfWork(db, meter)
-	if err != nil {
-		t.Fatalf("NewUnitOfWork() failed: %v", err)
-	}
+		assert.NoError(t, err)
+		assert.Equal(t, "success", *res)
+		assert.NoError(t, mock.ExpectationsWereMet())
 
-	// Test successful begin
-	err = uow.Begin(context.Background())
-	if err != nil {
-		t.Errorf("Begin() failed: %v", err)
-	}
-
-	if uow.tx == nil {
-		t.Errorf("Begin() should set tx, but got nil")
-	}
-
-	// Test double begin should fail
-	err = uow.Begin(context.Background())
-	if err == nil {
-		t.Errorf("Begin() with existing transaction should fail")
-	}
-
-	if err.Error() != "transaction already exists" {
-		t.Errorf("expected error 'transaction already exists', got: %v", err)
-	}
-
-	// Cleanup
-	uow.Rollback(context.Background())
-}
-
-// TestUnitOfWork_Commit tests transaction commit
-func TestUnitOfWork_Commit(t *testing.T) {
-	db := setupInMemoryDB(t)
-	defer db.Close()
-
-	meter := getMeterForTesting(t)
-	uow, err := NewUnitOfWork(db, meter)
-	if err != nil {
-		t.Fatalf("NewUnitOfWork() failed: %v", err)
-	}
-
-	// Test commit without begin should fail
-	err = uow.Commit(context.Background())
-	if err == nil {
-		t.Errorf("Commit() without transaction should fail")
-	}
-
-	if err.Error() != "no active transaction" {
-		t.Errorf("expected error 'no active transaction', got: %v", err)
-	}
-
-	// Test successful commit
-	err = uow.Begin(context.Background())
-	if err != nil {
-		t.Fatalf("Begin() failed: %v", err)
-	}
-
-	err = uow.Commit(context.Background())
-	if err != nil {
-		t.Errorf("Commit() failed: %v", err)
-	}
-
-	if uow.tx != nil {
-		t.Errorf("Commit() should set tx to nil, but got: %v", uow.tx)
-	}
-}
-
-// TestUnitOfWork_Rollback tests transaction rollback
-func TestUnitOfWork_Rollback(t *testing.T) {
-	db := setupInMemoryDB(t)
-	defer db.Close()
-
-	meter := getMeterForTesting(t)
-	uow, err := NewUnitOfWork(db, meter)
-	if err != nil {
-		t.Fatalf("NewUnitOfWork() failed: %v", err)
-	}
-
-	// Test rollback without transaction should not error
-	err = uow.Rollback(context.Background())
-	if err != nil {
-		t.Errorf("Rollback() without transaction should not error, got: %v", err)
-	}
-
-	// Test successful rollback
-	err = uow.Begin(context.Background())
-	if err != nil {
-		t.Fatalf("Begin() failed: %v", err)
-	}
-
-	err = uow.Rollback(context.Background())
-	if err != nil {
-		t.Errorf("Rollback() failed: %v", err)
-	}
-
-	if uow.tx != nil {
-		t.Errorf("Rollback() should set tx to nil, but got: %v", uow.tx)
-	}
-}
-
-// TestUnitOfWork_WithTx_Success tests WithTx with successful operation
-func TestUnitOfWork_WithTx_Success(t *testing.T) {
-	db := setupInMemoryDB(t)
-	defer db.Close()
-
-	meter := getMeterForTesting(t)
-	uow, err := NewUnitOfWork(db, meter)
-	if err != nil {
-		t.Fatalf("NewUnitOfWork() failed: %v", err)
-	}
-
-	executed := false
-	err = uow.WithTx(context.Background(), func(ctx context.Context) error {
-		executed = true
-
-		// Insert data in transaction
-		_, err := uow.tx.ExecContext(ctx,
-			"INSERT INTO customer_profile (id, email, first_name, last_name, title, date_of_birth, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-			"test-id", "test@example.com", "John", "Doe", "Mr", "1990-01-01", time.Now(), time.Now())
-		return err
+		// Verify Metrics: activeTransactions should be 0 (1 - 1)
+		var rm metricdata.ResourceMetrics
+		_ = reader.Collect(ctx, &rm)
+		// You can drill down into rm to verify db.transaction.active is 0
 	})
 
-	if err != nil {
-		t.Errorf("WithTx() failed: %v", err)
-	}
+	t.Run("Rollback on Error", func(t *testing.T) {
+		ctx := context.Background()
 
-	if !executed {
-		t.Errorf("WithTx() function should be executed")
-	}
+		mock.ExpectBegin()
+		mock.ExpectRollback()
 
-	if uow.tx != nil {
-		t.Errorf("WithTx() should set tx to nil after commit, but got: %v", uow.tx)
-	}
+		_, err := WithTx(ctx, func(ctx context.Context, repos repositories.Repositories) (*string, error) {
+			return nil, errors.New("business logic failed")
+		}, uow)
 
-	// Verify data was committed
-	var count int
-	err = db.Get(&count, "SELECT COUNT(*) FROM customer_profile WHERE email = ?", "test@example.com")
-	if err != nil {
-		t.Errorf("failed to query inserted data: %v", err)
-	}
-
-	if count != 1 {
-		t.Errorf("expected 1 row, got %d", count)
-	}
-}
-
-// TestUnitOfWork_WithTx_Rollback tests WithTx with rollback on error
-func TestUnitOfWork_WithTx_Rollback(t *testing.T) {
-	db := setupInMemoryDB(t)
-	defer db.Close()
-
-	meter := getMeterForTesting(t)
-	uow, err := NewUnitOfWork(db, meter)
-	if err != nil {
-		t.Fatalf("NewUnitOfWork() failed: %v", err)
-	}
-
-	err = uow.WithTx(context.Background(), func(ctx context.Context) error {
-		// Insert data that should be rolled back
-		_, execErr := uow.tx.ExecContext(ctx,
-			"INSERT INTO customer_profile (id, email, first_name, last_name, title, date_of_birth, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-			"rollback-id", "rollback@example.com", "Jane", "Doe", "Ms", "1985-05-15", time.Now(), time.Now())
-		if execErr != nil {
-			return execErr
-		}
-
-		return context.DeadlineExceeded // Simulate error
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "business logic failed")
+		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
-	if err == nil {
-		t.Errorf("WithTx() should return error")
-	}
+	t.Run("Rollback on Panic", func(t *testing.T) {
+		ctx := context.Background()
 
-	if uow.tx != nil {
-		t.Errorf("WithTx() should set tx to nil after rollback, but got: %v", uow.tx)
-	}
+		mock.ExpectBegin()
+		mock.ExpectRollback()
 
-	// Verify data was rolled back
-	var count int
-	err = db.Get(&count, "SELECT COUNT(*) FROM customer_profile WHERE email = ?", "rollback@example.com")
-	if err != nil {
-		t.Errorf("failed to query data: %v", err)
-	}
+		assert.Panics(t, func() {
+			_, _ = WithTx(ctx, func(ctx context.Context, repos repositories.Repositories) (*string, error) {
+				panic("something went horribly wrong")
+			}, uow)
+		})
 
-	if count != 0 {
-		t.Errorf("expected 0 rows (rolled back), got %d", count)
-	}
-}
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
 
-// TestUnitOfWork_WithTx_Panic tests WithTx with panic recovery
-func TestUnitOfWork_WithTx_Panic(t *testing.T) {
-	db := setupInMemoryDB(t)
-	defer db.Close()
+	t.Run("Transaction Begin Failure", func(t *testing.T) {
+		ctx := context.Background()
 
-	meter := getMeterForTesting(t)
-	uow, err := NewUnitOfWork(db, meter)
-	if err != nil {
-		t.Fatalf("NewUnitOfWork() failed: %v", err)
-	}
+		mock.ExpectBegin().WillReturnError(errors.New("connection limit reached"))
 
-	// Use defer to catch the panic
-	defer func() {
-		if r := recover(); r == nil {
-			t.Errorf("WithTx() should re-raise panic")
-		}
-		// Panic should be re-raised, so we expect to catch it here
-	}()
+		_, err := WithTx(ctx, func(ctx context.Context, repos repositories.Repositories) (*string, error) {
+			return nil, nil
+		}, uow)
 
-	uow.WithTx(context.Background(), func(ctx context.Context) error {
-		// Insert data
-		uow.tx.ExecContext(ctx,
-			"INSERT INTO customer_profile (id, email, first_name, last_name, title, date_of_birth, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-			"panic-id", "panic@example.com", "Panic", "User", "Dr", "1970-12-31", time.Now(), time.Now())
-
-		panic("test panic")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to begin transaction")
+		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 }
 
-// TestUnitOfWork_WithTx_Panic_Rollback tests that panic triggers rollback
-func TestUnitOfWork_WithTx_Panic_Rollback(t *testing.T) {
-	db := setupInMemoryDB(t)
-	defer db.Close()
+func TestWithTx_Concurrency(t *testing.T) {
+	mockDB, mock, _ := sqlmock.New()
+	defer mockDB.Close()
+	sqlxDB := sqlx.NewDb(mockDB, "postgres")
 
-	meter := getMeterForTesting(t)
-	uow, err := NewUnitOfWork(db, meter)
-	if err != nil {
-		t.Fatalf("NewUnitOfWork() failed: %v", err)
+	provider := metric.NewMeterProvider()
+	uow, _ := NewUnitOfWork(sqlxDB, provider.Meter("test"))
+
+	// 1. IMPORTANT: Allow expectations to be met in any order
+	mock.MatchExpectationsInOrder(false)
+
+	const concurrentCount = 10
+	var wg sync.WaitGroup
+	wg.Add(concurrentCount)
+
+	// 2. Set up expectations for 10 separate transactions
+	for i := 0; i < concurrentCount; i++ {
+		mock.ExpectBegin()
+		mock.ExpectCommit()
 	}
 
-	// Recover from panic
-	defer func() {
-		recover() // Suppress panic
-	}()
+	// 3. Run goroutines
+	for i := 0; i < concurrentCount; i++ {
+		go func(id int) {
+			defer wg.Done()
 
-	uow.WithTx(context.Background(), func(ctx context.Context) error {
-		// Insert data
-		uow.tx.ExecContext(ctx,
-			"INSERT INTO customer_profile (id, email, first_name, last_name, title, date_of_birth, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-			"panic-id", "panic@example.com", "Panic", "User", "Dr", "1970-12-31", time.Now(), time.Now())
+			// Each WithTx now creates its own Transaction struct internally
+			_, err := WithTx(context.Background(), func(ctx context.Context, repos repositories.Repositories) (*int, error) {
+				// Simulate a tiny bit of processing time
+				time.Sleep(time.Millisecond * 10)
+				return &id, nil
+			}, uow)
 
-		panic("test panic")
+			assert.NoError(t, err)
+		}(i)
+	}
+
+	wg.Wait()
+
+	// 4. Verify all 10 Begins and 10 Commits happened
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestWithTx_RollbackOnError(t *testing.T) {
+	mockDB, mock, _ := sqlmock.New()
+	defer mockDB.Close()
+	sqlxDB := sqlx.NewDb(mockDB, "postgres")
+	uow, _ := NewUnitOfWork(sqlxDB, metric.NewMeterProvider().Meter("test"))
+
+	t.Run("Should Rollback when inner function fails", func(t *testing.T) {
+		mock.ExpectBegin()
+		mock.ExpectRollback()
+
+		_, err := WithTx(context.Background(), func(ctx context.Context, repos repositories.Repositories) (*string, error) {
+			return nil, errors.New("database constraint violation")
+		}, uow)
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "database constraint violation")
 	})
-
-	// Verify data was rolled back
-	var count int
-	err = db.Get(&count, "SELECT COUNT(*) FROM customer_profile WHERE email = ?", "panic@example.com")
-	if err != nil {
-		t.Errorf("failed to query data: %v", err)
-	}
-
-	if count != 0 {
-		t.Errorf("expected 0 rows (rolled back after panic), got %d", count)
-	}
 }
 
-// TestUnitOfWork_MultipleOperations tests multiple operations in single transaction
-func TestUnitOfWork_MultipleOperations(t *testing.T) {
-	db := setupInMemoryDB(t)
-	defer db.Close()
+func TestWithTx_PanicRecovery(t *testing.T) {
+	mockDB, mock, _ := sqlmock.New()
+	defer mockDB.Close()
+	sqlxDB := sqlx.NewDb(mockDB, "postgres")
+	uow, _ := NewUnitOfWork(sqlxDB, metric.NewMeterProvider().Meter("test"))
 
-	meter := getMeterForTesting(t)
-	uow, err := NewUnitOfWork(db, meter)
-	if err != nil {
-		t.Fatalf("NewUnitOfWork() failed: %v", err)
-	}
+	t.Run("Should Rollback on Panic", func(t *testing.T) {
+		mock.ExpectBegin()
+		mock.ExpectRollback()
 
-	err = uow.WithTx(context.Background(), func(ctx context.Context) error {
-		// Multiple insert operations
-		queries := []struct {
-			id    string
-			email string
-			name  string
-		}{
-			{"id1", "user1@test.com", "User One"},
-			{"id2", "user2@test.com", "User Two"},
-			{"id3", "user3@test.com", "User Three"},
-		}
+		assert.Panics(t, func() {
+			_, _ = WithTx(context.Background(), func(ctx context.Context, repos repositories.Repositories) (*string, error) {
+				panic("unexpected crash")
+			}, uow)
+		})
 
-		for _, q := range queries {
-			_, err := uow.tx.ExecContext(ctx,
-				"INSERT INTO customer_profile (id, email, first_name, last_name, title, date_of_birth, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-				q.id, q.email, q.name, "Test", "Mr", "1990-01-01", time.Now(), time.Now())
-			if err != nil {
-				return err
-			}
-		}
-
-		return nil
+		assert.NoError(t, mock.ExpectationsWereMet())
 	})
-
-	if err != nil {
-		t.Errorf("WithTx() failed: %v", err)
-	}
-
-	// Verify all operations were committed
-	var count int
-	err = db.Get(&count, "SELECT COUNT(*) FROM customer_profile")
-	if err != nil {
-		t.Errorf("failed to query count: %v", err)
-	}
-
-	if count != 3 {
-		t.Errorf("expected 3 rows, got %d", count)
-	}
-}
-
-// TestUnitOfWork_ConstraintViolation tests rollback on constraint violation
-func TestUnitOfWork_ConstraintViolation(t *testing.T) {
-	db := setupInMemoryDB(t)
-	defer db.Close()
-
-	meter := getMeterForTesting(t)
-	uow, err := NewUnitOfWork(db, meter)
-	if err != nil {
-		t.Fatalf("NewUnitOfWork() failed: %v", err)
-	}
-
-	err = uow.WithTx(context.Background(), func(ctx context.Context) error {
-		// First insert succeeds
-		_, err := uow.tx.ExecContext(ctx,
-			"INSERT INTO customer_profile (id, email, first_name, last_name, title, date_of_birth, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-			"id1", "unique@test.com", "John", "Doe", "Mr", "1990-01-01", time.Now(), time.Now())
-		if err != nil {
-			return err
-		}
-
-		// Second insert fails due to unique constraint
-		_, err = uow.tx.ExecContext(ctx,
-			"INSERT INTO customer_profile (id, email, first_name, last_name, title, date_of_birth, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-			"id2", "unique@test.com", "Jane", "Doe", "Ms", "1985-05-15", time.Now(), time.Now())
-
-		return err
-	})
-
-	if err == nil {
-		t.Errorf("WithTx() should return error for constraint violation")
-	}
-
-	// Verify nothing was committed (rollback occurred)
-	var count int
-	err = db.Get(&count, "SELECT COUNT(*) FROM customer_profile")
-	if err != nil {
-		t.Errorf("failed to query count: %v", err)
-	}
-
-	if count != 0 {
-		t.Errorf("expected 0 rows (transaction rolled back), got %d", count)
-	}
-}
-
-// TestUnitOfWork_BeginAndRollback tests explicit begin and rollback
-func TestUnitOfWork_BeginAndRollback(t *testing.T) {
-	db := setupInMemoryDB(t)
-	defer db.Close()
-
-	meter := getMeterForTesting(t)
-	uow, err := NewUnitOfWork(db, meter)
-	if err != nil {
-		t.Fatalf("NewUnitOfWork() failed: %v", err)
-	}
-
-	// Begin transaction
-	err = uow.Begin(context.Background())
-	if err != nil {
-		t.Fatalf("Begin() failed: %v", err)
-	}
-
-	// Insert data
-	_, err = uow.tx.ExecContext(context.Background(),
-		"INSERT INTO customer_profile (id, email, first_name, last_name, title, date_of_birth, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-		"test-id", "test@example.com", "John", "Doe", "Mr", "1990-01-01", time.Now(), time.Now())
-	if err != nil {
-		t.Fatalf("failed to insert: %v", err)
-	}
-
-	// Rollback transaction
-	err = uow.Rollback(context.Background())
-	if err != nil {
-		t.Errorf("Rollback() failed: %v", err)
-	}
-
-	// Verify data was rolled back
-	var count int
-	err = db.Get(&count, "SELECT COUNT(*) FROM customer_profile")
-	if err != nil {
-		t.Errorf("failed to query count: %v", err)
-	}
-
-	if count != 0 {
-		t.Errorf("expected 0 rows (rolled back), got %d", count)
-	}
-}
-
-// TestUnitOfWork_BeginAndCommit tests explicit begin and commit
-func TestUnitOfWork_BeginAndCommit(t *testing.T) {
-	db := setupInMemoryDB(t)
-	defer db.Close()
-
-	meter := getMeterForTesting(t)
-	uow, err := NewUnitOfWork(db, meter)
-	if err != nil {
-		t.Fatalf("NewUnitOfWork() failed: %v", err)
-	}
-
-	// Begin transaction
-	err = uow.Begin(context.Background())
-	if err != nil {
-		t.Fatalf("Begin() failed: %v", err)
-	}
-
-	// Insert data
-	_, err = uow.tx.ExecContext(context.Background(),
-		"INSERT INTO customer_profile (id, email, first_name, last_name, title, date_of_birth, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-		"test-id", "test@example.com", "John", "Doe", "Mr", "1990-01-01", time.Now(), time.Now())
-	if err != nil {
-		t.Fatalf("failed to insert: %v", err)
-	}
-
-	// Commit transaction
-	err = uow.Commit(context.Background())
-	if err != nil {
-		t.Errorf("Commit() failed: %v", err)
-	}
-
-	// Verify data was committed
-	var count int
-	err = db.Get(&count, "SELECT COUNT(*) FROM customer_profile")
-	if err != nil {
-		t.Errorf("failed to query count: %v", err)
-	}
-
-	if count != 1 {
-		t.Errorf("expected 1 row (committed), got %d", count)
-	}
-}
-
-// TestWithTx_Success tests generic WithTx with successful string return
-func TestWithTx_Success(t *testing.T) {
-	db := setupInMemoryDB(t)
-	defer db.Close()
-
-	meter := getMeterForTesting(t)
-	uow, err := NewUnitOfWork(db, meter)
-	if err != nil {
-		t.Fatalf("NewUnitOfWork() failed: %v", err)
-	}
-
-	result, err := WithTx[string](context.Background(), func(ctx context.Context) (*string, error) {
-		// Insert data in transaction
-		_, execErr := uow.tx.ExecContext(ctx,
-			"INSERT INTO customer_profile (id, email, first_name, last_name, title, date_of_birth, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-			"test-id", "test@example.com", "John", "Doe", "Mr", "1990-01-01", time.Now(), time.Now())
-		if execErr != nil {
-			return nil, execErr
-		}
-
-		success := "success"
-		return &success, nil
-	}, uow)
-
-	if err != nil {
-		t.Errorf("WithTx() failed: %v", err)
-	}
-
-	if result == nil || *result != "success" {
-		t.Errorf("expected result 'success', got %v", result)
-	}
-
-	if uow.tx != nil {
-		t.Errorf("WithTx() should set tx to nil after commit, but got: %v", uow.tx)
-	}
-
-	// Verify data was committed
-	var count int
-	err = db.Get(&count, "SELECT COUNT(*) FROM customer_profile WHERE email = ?", "test@example.com")
-	if err != nil {
-		t.Errorf("failed to query inserted data: %v", err)
-	}
-
-	if count != 1 {
-		t.Errorf("expected 1 row, got %d", count)
-	}
-}
-
-// TestWithTx_IntReturn tests generic WithTx with int return type
-func TestWithTx_IntReturn(t *testing.T) {
-	db := setupInMemoryDB(t)
-	defer db.Close()
-
-	meter := getMeterForTesting(t)
-	uow, err := NewUnitOfWork(db, meter)
-	if err != nil {
-		t.Fatalf("NewUnitOfWork() failed: %v", err)
-	}
-
-	count, err := WithTx[int](context.Background(), func(ctx context.Context) (*int, error) {
-		// Insert multiple rows
-		queries := []struct {
-			id    string
-			email string
-			name  string
-		}{
-			{"id1", "user1@test.com", "User One"},
-			{"id2", "user2@test.com", "User Two"},
-			{"id3", "user3@test.com", "User Three"},
-		}
-
-		for _, q := range queries {
-			_, execErr := uow.tx.ExecContext(ctx,
-				"INSERT INTO customer_profile (id, email, first_name, last_name, title, date_of_birth, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-				q.id, q.email, q.name, "Test", "Mr", "1990-01-01", time.Now(), time.Now())
-			if execErr != nil {
-				return nil, execErr
-			}
-		}
-
-		insertedCount := len(queries)
-		return &insertedCount, nil
-	}, uow)
-
-	if err != nil {
-		t.Errorf("WithTx() failed: %v", err)
-	}
-
-	if count == nil || *count != 3 {
-		t.Errorf("expected result 3, got %v", count)
-	}
-
-	// Verify all rows were committed
-	var dbCount int
-	err = db.Get(&dbCount, "SELECT COUNT(*) FROM customer_profile")
-	if err != nil {
-		t.Errorf("failed to query count: %v", err)
-	}
-
-	if dbCount != 3 {
-		t.Errorf("expected 3 rows in database, got %d", dbCount)
-	}
-}
-
-// TestWithTx_StructReturn tests generic WithTx with custom struct return
-func TestWithTx_StructReturn(t *testing.T) {
-	db := setupInMemoryDB(t)
-	defer db.Close()
-
-	meter := getMeterForTesting(t)
-	uow, err := NewUnitOfWork(db, meter)
-	if err != nil {
-		t.Fatalf("NewUnitOfWork() failed: %v", err)
-	}
-
-	type Customer struct {
-		ID    string
-		Email string
-		Name  string
-	}
-
-	result, err := WithTx[Customer](context.Background(), func(ctx context.Context) (*Customer, error) {
-		customer := &Customer{
-			ID:    "cust-123",
-			Email: "customer@test.com",
-			Name:  "John Doe",
-		}
-
-		_, execErr := uow.tx.ExecContext(ctx,
-			"INSERT INTO customer_profile (id, email, first_name, last_name, title, date_of_birth, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-			customer.ID, customer.Email, "John", "Doe", "Mr", "1990-01-01", time.Now(), time.Now())
-		if execErr != nil {
-			return nil, execErr
-		}
-
-		return customer, nil
-	}, uow)
-
-	if err != nil {
-		t.Errorf("WithTx() failed: %v", err)
-	}
-
-	if result == nil || result.ID != "cust-123" || result.Email != "customer@test.com" {
-		t.Errorf("expected Customer struct, got %v", result)
-	}
-
-	// Verify data was committed
-	var count int
-	err = db.Get(&count, "SELECT COUNT(*) FROM customer_profile WHERE id = ?", "cust-123")
-	if err != nil {
-		t.Errorf("failed to query inserted data: %v", err)
-	}
-
-	if count != 1 {
-		t.Errorf("expected 1 row, got %d", count)
-	}
-}
-
-// TestWithTx_Rollback tests generic WithTx with rollback on error
-func TestWithTx_Rollback(t *testing.T) {
-	db := setupInMemoryDB(t)
-	defer db.Close()
-
-	meter := getMeterForTesting(t)
-	uow, err := NewUnitOfWork(db, meter)
-	if err != nil {
-		t.Fatalf("NewUnitOfWork() failed: %v", err)
-	}
-
-	result, err := WithTx[string](context.Background(), func(ctx context.Context) (*string, error) {
-		// Insert data that should be rolled back
-		_, execErr := uow.tx.ExecContext(ctx,
-			"INSERT INTO customer_profile (id, email, first_name, last_name, title, date_of_birth, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-			"rollback-id", "rollback@example.com", "Jane", "Doe", "Ms", "1985-05-15", time.Now(), time.Now())
-		if execErr != nil {
-			return nil, execErr
-		}
-
-		return nil, context.DeadlineExceeded // Simulate error
-	}, uow)
-
-	if err == nil {
-		t.Errorf("WithTx() should return error")
-	}
-
-	if result != nil {
-		t.Errorf("WithTx() should return nil result on error, got %v", result)
-	}
-
-	if uow.tx != nil {
-		t.Errorf("WithTx() should set tx to nil after rollback, but got: %v", uow.tx)
-	}
-
-	// Verify data was rolled back
-	var count int
-	err = db.Get(&count, "SELECT COUNT(*) FROM customer_profile WHERE email = ?", "rollback@example.com")
-	if err != nil {
-		t.Errorf("failed to query data: %v", err)
-	}
-
-	if count != 0 {
-		t.Errorf("expected 0 rows (rolled back), got %d", count)
-	}
-}
-
-// TestWithTx_Panic tests generic WithTx with panic recovery
-func TestWithTx_Panic(t *testing.T) {
-	db := setupInMemoryDB(t)
-	defer db.Close()
-
-	meter := getMeterForTesting(t)
-	uow, err := NewUnitOfWork(db, meter)
-	if err != nil {
-		t.Fatalf("NewUnitOfWork() failed: %v", err)
-	}
-
-	// Use defer to catch the panic
-	defer func() {
-		if r := recover(); r == nil {
-			t.Errorf("WithTx() should re-raise panic")
-		}
-	}()
-
-	WithTx[string](context.Background(), func(ctx context.Context) (*string, error) {
-		// Insert data
-		uow.tx.ExecContext(ctx,
-			"INSERT INTO customer_profile (id, email, first_name, last_name, title, date_of_birth, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-			"panic-id", "panic@example.com", "Panic", "User", "Dr", "1970-12-31", time.Now(), time.Now())
-
-		panic("test panic")
-	}, uow)
-}
-
-// TestWithTx_Panic_Rollback tests that panic triggers rollback
-func TestWithTx_Panic_Rollback(t *testing.T) {
-	db := setupInMemoryDB(t)
-	defer db.Close()
-
-	meter := getMeterForTesting(t)
-	uow, err := NewUnitOfWork(db, meter)
-	if err != nil {
-		t.Fatalf("NewUnitOfWork() failed: %v", err)
-	}
-
-	// Recover from panic
-	defer func() {
-		recover() // Suppress panic
-	}()
-
-	WithTx[string](context.Background(), func(ctx context.Context) (*string, error) {
-		// Insert data
-		uow.tx.ExecContext(ctx,
-			"INSERT INTO customer_profile (id, email, first_name, last_name, title, date_of_birth, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-			"panic-id", "panic@example.com", "Panic", "User", "Dr", "1970-12-31", time.Now(), time.Now())
-
-		panic("test panic")
-	}, uow)
-
-	// Verify data was rolled back
-	var count int
-	err = db.Get(&count, "SELECT COUNT(*) FROM customer_profile WHERE email = ?", "panic@example.com")
-	if err != nil {
-		t.Errorf("failed to query data: %v", err)
-	}
-
-	if count != 0 {
-		t.Errorf("expected 0 rows (rolled back after panic), got %d", count)
-	}
-}
-
-// TestWithTx_NilReturn tests generic WithTx with nil return
-func TestWithTx_NilReturn(t *testing.T) {
-	db := setupInMemoryDB(t)
-	defer db.Close()
-
-	meter := getMeterForTesting(t)
-	uow, err := NewUnitOfWork(db, meter)
-	if err != nil {
-		t.Fatalf("NewUnitOfWork() failed: %v", err)
-	}
-
-	result, err := WithTx[string](context.Background(), func(ctx context.Context) (*string, error) {
-		// Insert data
-		_, execErr := uow.tx.ExecContext(ctx,
-			"INSERT INTO customer_profile (id, email, first_name, last_name, title, date_of_birth, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-			"nil-id", "nil@example.com", "Nil", "User", "Mr", "1990-01-01", time.Now(), time.Now())
-		if execErr != nil {
-			return nil, execErr
-		}
-
-		return nil, nil // Return nil but no error
-	}, uow)
-
-	if err != nil {
-		t.Errorf("WithTx() failed: %v", err)
-	}
-
-	if result != nil {
-		t.Errorf("expected nil result, got %v", result)
-	}
-
-	// Verify data was still committed
-	var count int
-	err = db.Get(&count, "SELECT COUNT(*) FROM customer_profile WHERE email = ?", "nil@example.com")
-	if err != nil {
-		t.Errorf("failed to query data: %v", err)
-	}
-
-	if count != 1 {
-		t.Errorf("expected 1 row committed, got %d", count)
-	}
-}
-
-// TestWithTx_BeginError tests generic WithTx with begin error
-func TestWithTx_BeginError(t *testing.T) {
-	db := setupInMemoryDB(t)
-	defer db.Close()
-
-	meter := getMeterForTesting(t)
-	uow, err := NewUnitOfWork(db, meter)
-	if err != nil {
-		t.Fatalf("NewUnitOfWork() failed: %v", err)
-	}
-
-	// Set up first transaction to cause begin to fail
-	err = uow.Begin(context.Background())
-	if err != nil {
-		t.Fatalf("Begin() failed: %v", err)
-	}
-
-	// Try WithTx with existing transaction should fail
-	result, err := WithTx[string](context.Background(), func(ctx context.Context) (*string, error) {
-		return nil, nil
-	}, uow)
-
-	if err == nil {
-		t.Errorf("WithTx() should return error when begin fails")
-	}
-
-	if result != nil {
-		t.Errorf("expected nil result on begin error, got %v", result)
-	}
-
-	// Cleanup
-	uow.Rollback(context.Background())
 }
