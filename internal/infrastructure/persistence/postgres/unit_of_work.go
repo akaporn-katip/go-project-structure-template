@@ -26,8 +26,8 @@ type UnitOfWork struct {
 	activeTransactions   metric.Int64UpDownCounter
 }
 
-func NewUnitOfWork(db *sqlx.DB, meter metric.Meter) (*UnitOfWork, error) {
-
+func NewUnitOfWork(db *sqlx.DB) (*UnitOfWork, error) {
+	meter := otel.Meter("api.katipwork.com/crm/internal/infrastructure/persistence/postgres/unit_of_work")
 	transactionCounter, err := meter.Int64Counter(
 		"db.transaction.total",
 		metric.WithDescription("Total number of database transactions"),
@@ -175,12 +175,13 @@ func (u *UnitOfWork) ExecuteTx(ctx context.Context, fn unitofwork.TxFunction) er
 	return nil
 }
 
-func WithTx[T any](ctx context.Context, fn unitofwork.TxFunctionWithResult[T], uow unitofwork.UnitOfWork) (*T, error) {
+func WithTx[T any](ctx context.Context, fn unitofwork.TxFunctionWithResult[T], uow unitofwork.UnitOfWork) (T, error) {
 	start := time.Now()
 
+	var zero T
 	concreteUow, ok := uow.(*UnitOfWork)
 	if !ok {
-		return nil, fmt.Errorf("infrastructure mismatch: expected postgres.UnitOfWork")
+		return zero, fmt.Errorf("infrastructure mismatch: expected postgres.UnitOfWork")
 	}
 	tx := concreteUow.CreateTransaction()
 
@@ -197,7 +198,7 @@ func WithTx[T any](ctx context.Context, fn unitofwork.TxFunctionWithResult[T], u
 	if err := tx.Begin(ctx); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to begin transaction")
-		return nil, err
+		return zero, err
 	}
 
 	span.AddEvent("executing_function")
@@ -232,12 +233,12 @@ func WithTx[T any](ctx context.Context, fn unitofwork.TxFunctionWithResult[T], u
 				),
 			)
 
-			return nil, fmt.Errorf("error: %v, rollback error: %v", err, rbErr)
+			return zero, fmt.Errorf("error: %v, rollback error: %v", err, rbErr)
 		}
 
 		span.AddEvent("rollback_successful")
 		span.SetStatus(codes.Error, "transaction rolled back due to error")
-		return nil, err
+		return zero, err
 	}
 
 	span.AddEvent("attempting_commit")
@@ -254,7 +255,7 @@ func WithTx[T any](ctx context.Context, fn unitofwork.TxFunctionWithResult[T], u
 			),
 		)
 
-		return nil, err
+		return zero, err
 	}
 
 	span.AddEvent("commit_successful")
@@ -267,9 +268,9 @@ func WithTx[T any](ctx context.Context, fn unitofwork.TxFunctionWithResult[T], u
 			attribute.String("outcome", "committed"),
 		),
 	)
-	return &rs, nil
+	return rs, nil
 }
 
 func (uow *UnitOfWork) GetRepositories() repositories.Repositories {
-	return NewPostgresRepositories(uow.db, uow.meter)
+	return NewPostgresRepositories(uow.db)
 }

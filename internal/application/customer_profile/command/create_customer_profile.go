@@ -26,7 +26,7 @@ type CreateCustomerProfileHandler struct {
 func NewCreateCustomerProfileHandler(uow unitofwork.UnitOfWork) *CreateCustomerProfileHandler {
 	return &CreateCustomerProfileHandler{
 		uow:    uow,
-		tracer: otel.Tracer("api.katipwork.com/crm/internal/application/customer_profile/command/create_customer_profile"),
+		tracer: otel.Tracer("github.com/akaporn-katip/go-project-structure-template/internal/application/customer_profile/command/create_customer_profile"),
 	}
 }
 

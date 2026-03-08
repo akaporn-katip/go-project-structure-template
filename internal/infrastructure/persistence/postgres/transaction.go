@@ -108,5 +108,5 @@ func (t *Transaction) Rollback(ctx context.Context) error {
 }
 
 func (t *Transaction) CreatePostgresRepositoriesWithTx(ctx context.Context) repositories.Repositories {
-	return NewPostgresRepositories(t.tx, t.uow.meter)
+	return NewPostgresRepositories(t.tx)
 }

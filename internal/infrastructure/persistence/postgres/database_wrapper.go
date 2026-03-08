@@ -24,11 +24,13 @@ type DatabaseWrapper struct {
 	queryErrors   metric.Int64Counter
 }
 
-func NewDatabaseWrapper(db DatabaseExecutor, meter metric.Meter) *DatabaseWrapper {
+func NewDatabaseWrapper(db DatabaseExecutor) *DatabaseWrapper {
 	wrapper := &DatabaseWrapper{
 		db:     db,
 		tracer: otel.Tracer("api.katipwork.com/crm/internal/infrastructure/persistence/postgres/database_wrapper"),
 	}
+
+	meter := otel.Meter("api.katipwork.com/crm/internal/infrastructure/persistence/postgres/unit_of_work")
 	wrapper.initMetrics(meter)
 	return wrapper
 }

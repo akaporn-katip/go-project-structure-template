@@ -12,46 +12,31 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel/sdk/metric"
-	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
 func TestWithTx(t *testing.T) {
-	// 1. Setup Mock DB
 	mockDB, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer mockDB.Close()
 	sqlxDB := sqlx.NewDb(mockDB, "postgres")
 
-	// 2. Setup Mock Metrics (using SDK Reader to verify counts)
-	reader := metric.NewManualReader()
-	provider := metric.NewMeterProvider(metric.WithReader(reader))
-	testMeter := provider.Meter("test")
-
-	// 3. Initialize UOW
-	uow, err := NewUnitOfWork(sqlxDB, testMeter)
+	uow, err := NewUnitOfWork(sqlxDB)
 	require.NoError(t, err)
 
 	t.Run("Successful Commit", func(t *testing.T) {
 		ctx := context.Background()
 
-		// Expectations
 		mock.ExpectBegin()
 		mock.ExpectCommit()
 
-		res, err := WithTx(ctx, func(ctx context.Context, repos repositories.Repositories) (*string, error) {
+		res, err := WithTx(ctx, func(ctx context.Context, repos repositories.Repositories) (string, error) {
 			s := "success"
-			return &s, nil
+			return s, nil
 		}, uow)
 
 		assert.NoError(t, err)
-		assert.Equal(t, "success", *res)
+		assert.Equal(t, "success", res)
 		assert.NoError(t, mock.ExpectationsWereMet())
-
-		// Verify Metrics: activeTransactions should be 0 (1 - 1)
-		var rm metricdata.ResourceMetrics
-		_ = reader.Collect(ctx, &rm)
-		// You can drill down into rm to verify db.transaction.active is 0
 	})
 
 	t.Run("Rollback on Error", func(t *testing.T) {
@@ -104,8 +89,7 @@ func TestWithTx_Concurrency(t *testing.T) {
 	defer mockDB.Close()
 	sqlxDB := sqlx.NewDb(mockDB, "postgres")
 
-	provider := metric.NewMeterProvider()
-	uow, _ := NewUnitOfWork(sqlxDB, provider.Meter("test"))
+	uow, _ := NewUnitOfWork(sqlxDB)
 
 	// 1. IMPORTANT: Allow expectations to be met in any order
 	mock.MatchExpectationsInOrder(false)
@@ -146,7 +130,7 @@ func TestWithTx_RollbackOnError(t *testing.T) {
 	mockDB, mock, _ := sqlmock.New()
 	defer mockDB.Close()
 	sqlxDB := sqlx.NewDb(mockDB, "postgres")
-	uow, _ := NewUnitOfWork(sqlxDB, metric.NewMeterProvider().Meter("test"))
+	uow, _ := NewUnitOfWork(sqlxDB)
 
 	t.Run("Should Rollback when inner function fails", func(t *testing.T) {
 		mock.ExpectBegin()
@@ -165,7 +149,7 @@ func TestWithTx_PanicRecovery(t *testing.T) {
 	mockDB, mock, _ := sqlmock.New()
 	defer mockDB.Close()
 	sqlxDB := sqlx.NewDb(mockDB, "postgres")
-	uow, _ := NewUnitOfWork(sqlxDB, metric.NewMeterProvider().Meter("test"))
+	uow, _ := NewUnitOfWork(sqlxDB)
 
 	t.Run("Should Rollback on Panic", func(t *testing.T) {
 		mock.ExpectBegin()

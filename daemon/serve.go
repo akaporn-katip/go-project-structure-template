@@ -24,33 +24,6 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-func setupInMemoryDB() (*sqlx.DB, error) {
-	db, err := sqlx.Connect("sqlite3", ":memory:")
-	if err != nil {
-		return nil, err
-	}
-
-	// Create test schema
-	schema := `
-	CREATE TABLE customer_profile (
-		id TEXT PRIMARY KEY,
-		title TEXT,
-		first_name TEXT,
-		last_name TEXT,
-		email TEXT UNIQUE,
-		date_of_birth TEXT,
-		created_at DATETIME,
-		updated_at DATETIME
-	);`
-
-	_, err = db.Exec(schema)
-	if err != nil {
-		return nil, err
-	}
-
-	return db, nil
-}
-
 func Serve(configPath string) {
 	cfg, err := config.LoadWithPath(configPath)
 	if err != nil {
@@ -150,7 +123,7 @@ func Serve(configPath string) {
 	}
 	defer db.Close()
 	// Create Unit of work
-	uow, err := postgres.NewUnitOfWork(db, metrics.Meter())
+	uow, err := postgres.NewUnitOfWork(db)
 	if err != nil {
 		log.Fatalf("Failed to create unit of work %v", err)
 	}
