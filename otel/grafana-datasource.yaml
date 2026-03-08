@@ -16,7 +16,7 @@ datasources:
       derivedFields:
         # This regex looks for trace_id in your logs and creates a link to Tempo
         - datasourceUid: tempo-ds
-          matcherRegex: "traceid=(\\w+)"
+          matcherRegex: '"traceid":"(\w+)"'
           name: TraceID
           url: "$${__value.raw}"
 
