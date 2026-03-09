@@ -34,7 +34,7 @@ func (c *CreateCustomerProfileHandler) Handle(ctx context.Context, cmd CreateCus
 	_, span := c.tracer.Start(ctx, "CreateCustomerProfileHandler.Handle", trace.WithSpanKind(trace.SpanKindInternal))
 	defer span.End()
 	return unitofwork.ExecuteTx(ctx, c.uow, func(ctx context.Context, repos repositories.Repositories) (*customerprofile.CustomerID, error) {
-		repo := repos.GetCustomerProfileRepository()
+		repo := repos.CustomerProfileRepository()
 		svc := customerprofile.NewService(repo)
 		return do(ctx, repo, svc, cmd)
 	})

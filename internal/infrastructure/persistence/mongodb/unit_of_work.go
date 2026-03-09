@@ -131,6 +131,6 @@ func WithTx[T any](ctx context.Context, fn unitofwork.TxFunctionWithResult[T], u
 	return result, nil
 }
 
-func (uow *UnitOfWork) GetRepositories() repositories.Repositories {
+func (uow *UnitOfWork) Repositories() repositories.Repositories {
 	return NewMongoRepositories(uow.client.Database(uow.dbName))
 }

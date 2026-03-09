@@ -16,7 +16,7 @@ func NewMongoRepositories(db *mongo.Database) repositories.Repositories {
 	}
 }
 
-func (r *MongoRepositories) GetCustomerProfileRepository() customerprofile.Repository {
+func (r *MongoRepositories) CustomerProfileRepository() customerprofile.Repository {
 	coll := r.db.Collection("customer_profile")
 	wrapper := NewCollectionWrapper(coll)
 	return NewCustomerProfileRepository(wrapper)

@@ -15,7 +15,7 @@ func NewPostgresRepositories(db DatabaseExecutor) repositories.Repositories {
 	}
 }
 
-func (r *PostgresRepositories) GetCustomerProfileRepository() customerprofile.Repository {
+func (r *PostgresRepositories) CustomerProfileRepository() customerprofile.Repository {
 	wrapper := NewDatabaseWrapper(r.db)
 	return NewCustomerProfileRespository(wrapper)
 }

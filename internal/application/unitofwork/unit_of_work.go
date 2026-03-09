@@ -7,7 +7,7 @@ import (
 )
 
 type UnitOfWork interface {
-	GetRepositories() repositories.Repositories
+	Repositories() repositories.Repositories
 	ExecuteTx(ctx context.Context, fn TxFunction) error
 }
 
