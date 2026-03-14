@@ -28,7 +28,7 @@ type UnitOfWork struct {
 }
 
 func NewUnitOfWork(client *mongo.Client, dbName string) (*UnitOfWork, error) {
-	meter := otel.Meter("api.katipwork.com/crm/internal/infrastructure/persistence/mongodb/unit_of_work")
+	meter := otel.Meter("github.com/akaporn-katip/go-project-structure-template/internal/infrastructure/persistence/mongodb/unit_of_work")
 
 	transactionCounter, _ := meter.Int64Counter("db.transaction.total", metric.WithDescription("Total number of database transactions"))
 	transactionDuration, _ := meter.Float64Histogram("db.transaction.duration", metric.WithDescription("Duration of database transactions"), metric.WithUnit("ms"))
@@ -37,7 +37,7 @@ func NewUnitOfWork(client *mongo.Client, dbName string) (*UnitOfWork, error) {
 	return &UnitOfWork{
 		client:               client,
 		dbName:               dbName,
-		tracer:               otel.Tracer("api.katipwork.com/crm/internal/infrastructure/persistence/mongodb/unit_of_work"),
+		tracer:               otel.Tracer("github.com/akaporn-katip/go-project-structure-template/internal/infrastructure/persistence/mongodb/unit_of_work"),
 		meter:                meter,
 		transactionCounter:   transactionCounter,
 		transactionDuration:  transactionDuration,

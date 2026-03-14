@@ -18,7 +18,7 @@ type Service struct {
 func NewService(repo Repository) *Service {
 	return &Service{
 		repo:   repo,
-		tracer: otel.Tracer("api.katipwork.com/crm/internal/domain/customerprofile/service"),
+		tracer: otel.Tracer("github.com/akaporn-katip/go-project-structure-template/internal/domain/customerprofile/service"),
 	}
 }
 

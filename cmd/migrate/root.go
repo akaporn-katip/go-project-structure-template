@@ -12,16 +12,11 @@ func NewMigrateCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			configVal, _ := cmd.Flags().GetString("config")
 			cfg, _ := config.LoadWithPath(configVal)
-
-			dbType := cfg.Database.Type
-			dsn := cfg.Database.DSN
-
-			mt, err := migrate.NewMigrator(dbType, dsn)
+			mt, err := migrate.NewMigrator(cfg.Database)
 			if err != nil {
 				return err
 			}
 			return mt.Up()
-
 		},
 	}
 

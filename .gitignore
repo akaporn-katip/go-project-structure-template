@@ -5,3 +5,4 @@ coverage.out
 bin/*
 !bin/.keep
 .DS_Store
+.vscode

@@ -34,7 +34,7 @@ func NewRouter(
 		r.Use(loggingMiddleware.Handle())
 	}
 
-	api := r.Group("/crm-api/v1")
+	api := r.Group("/go-hexagonal-example/v1")
 	api.GET("/health", healthCheck)
 	api.POST("/customer-profile", handlers.CustomerProfileHandler.Create)
 	api.GET("/customer-profile/:id", handlers.CustomerProfileHandler.FindByID)

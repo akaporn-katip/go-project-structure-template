@@ -15,7 +15,7 @@ import (
 
 func TestUnitOfWork_ExecuteTx(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
-	
+
 	mt.Run("Success", func(mt *mtest.T) {
 		uow, err := mongodb.NewUnitOfWork(mt.Client, "testdb")
 		require.NoError(t, err)
@@ -42,7 +42,7 @@ func TestUnitOfWork_ExecuteTx(t *testing.T) {
 		mt.AddMockResponses(
 			bson.D{{Key: "ok", Value: 1}}, // start session success
 		)
-		
+
 		expectedErr := errors.New("business logic failed")
 
 		err = uow.ExecuteTx(context.Background(), func(ctx context.Context, repos repositories.Repositories) error {
@@ -53,6 +53,5 @@ func TestUnitOfWork_ExecuteTx(t *testing.T) {
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "business logic failed")
 	})
-	
 
 }

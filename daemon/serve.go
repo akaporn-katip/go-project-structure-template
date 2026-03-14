@@ -16,7 +16,7 @@ import (
 	"github.com/akaporn-katip/go-project-structure-template/internal/infrastructure/http/handler"
 	"github.com/akaporn-katip/go-project-structure-template/internal/infrastructure/http/middleware"
 	"github.com/akaporn-katip/go-project-structure-template/internal/infrastructure/observability"
-	"github.com/akaporn-katip/go-project-structure-template/internal/infrastructure/persistence/mongodb"
+	"github.com/akaporn-katip/go-project-structure-template/internal/infrastructure/persistence"
 	"github.com/go-playground/validator/v10"
 
 	_ "github.com/lib/pq"
@@ -110,26 +110,13 @@ func Serve(configPath string) {
 		"environment", cfg.Observability.Environment,
 		"log_level", cfg.Observability.LogLevel,
 	)
-
-	// // ====================================================================
-	// // Initialize Database Postgres
-	// // ====================================================================
-	// db, err := sqlx.Connect("postgres", cfg.Database.DSN)
-	// if err != nil {
-	// 	log.Fatalf("Failed to connect to database: %v", err)
-	// }
-	// defer db.Close()
-	// // Create Unit of work
-	// uow, err := postgres.NewUnitOfWork(db)
-	// if err != nil {
-	// 	log.Fatalf("Failed to create unit of work %v", err)
-	// }
-
-	// // ====================================================================
-	// // Initialize Database Mongo
-	// // ====================================================================
-	client, err := mongodb.NewMongoClient(cfg.Database.DSN)
-	uow, err := mongodb.NewUnitOfWork(client, "crmdb")
+	// ====================================================================
+	// Initialize Unit Of Work
+	// ====================================================================
+	uow, err := persistence.NewUnitOfWork(cfg.Database)
+	if err != nil {
+		log.Fatalf("Failed to create unit of work %v", err)
+	}
 	// ====================================================================
 	// Initialize Application Layer
 	// ====================================================================

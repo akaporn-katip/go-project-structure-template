@@ -20,11 +20,21 @@ type ServerConfig struct {
 	Env  string
 }
 
-type DatabaseConfig struct {
-	Type         string `mapstructure:"type"`
+type PostgresConfig struct {
 	DSN          string `mapstructure:"dsn"`
 	MaxOpenConns int    `mapstructure:"max_open_conns"`
 	MaxIdleConns int    `mapstructure:"max_idle_conns"`
+}
+
+type MongoConfig struct {
+	URI    string `mapstructure:"uri"`
+	DBName string `mapstructure:"db_name"`
+}
+
+type DatabaseConfig struct {
+	Type     string         `mapstructure:"type"`
+	Postgres PostgresConfig `mapstructure:"postgres"`
+	MongoDB  MongoConfig    `mapstructure:"mongodb"`
 }
 
 type ObservabilityConfig struct {
@@ -87,9 +97,10 @@ func setDefaults() {
 
 	// database
 	viper.SetDefault("database.type", "")
-	viper.SetDefault("database.dsn", "")
-	viper.SetDefault("database.max_open_conns", 25)
-	viper.SetDefault("database.max_idle_conns", 5)
+	viper.SetDefault("database.postgres.dsn", "")
+	viper.SetDefault("database.postgres.max_open_conns", 25)
+	viper.SetDefault("database.postgres.max_idle_conns", 5)
+	viper.SetDefault("database.mongodb.uri", "")
 }
 
 func validate(cfg *Config) error {
@@ -99,6 +110,22 @@ func validate(cfg *Config) error {
 		}
 		if cfg.Observability.TraceSampleRate < 0 || cfg.Observability.TraceSampleRate > 1 {
 			return fmt.Errorf("observability.trace_sample_rate must be between 0 and 1")
+		}
+	}
+
+	if cfg.Database.Type == "postgres" {
+		if cfg.Database.Postgres.DSN == "" {
+			return fmt.Errorf("database.postgres.dsn is required")
+		}
+	}
+
+	if cfg.Database.Type == "mongodb" {
+		if cfg.Database.MongoDB.URI == "" {
+			return fmt.Errorf("database.mongodb.uri is required")
+		}
+
+		if cfg.Database.MongoDB.DBName == "" {
+			return fmt.Errorf("database.mongodb.db_name is required")
 		}
 	}
 

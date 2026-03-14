@@ -1,6 +1,3 @@
-/*
-Copyright © 2026 NAME HERE <EMAIL ADDRESS>
-*/
 package cmd
 
 import (
@@ -24,7 +21,7 @@ func Execute() int {
 
 func NewRootCmd() *cobra.Command {
 	var rootCmd = &cobra.Command{
-		Use:              "crm",
+		Use:              "foo",
 		TraverseChildren: true,
 	}
 

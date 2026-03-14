@@ -1,26 +1,24 @@
 
 server:
-  port: ":8081"
+  port: ":8080"
   env: "development"
 
 database:
-  # type: "sqlite3" # postgres , mongodb , sqlite3
-  # dsn: "sqlite3://db.sqlite"
+  type: "mongodb"
+  mongodb:
+    uri: "your uri connection"
+    db_name: "foodb"
 
-  type: "postgres" # postgres , mongodb , sqlite3
-  dsn: "postgres://user:password@localhost:5432/myapp_db?sslmode=disable"
-
-  # type: "mongodb"
-  # dsn: "mongodb://admin:password@localhost:27017/app?authSource=admin"
-
-  max_open_conns: 25
-  max_idle_conns: 5
+  postgres:
+    dsn: "your postgres dsn"
+    max_open_conns: 25
+    max_idle_conns: 5
 
 observability:
   enabled: true
   otlp_protocol: grpc  # Use 'grpc' for remote OTLP collector, 'stdout' for local development
   otlp_endpoint: "localhost:4317"
-  service_name: "crm-api"
+  service_name: "go-hexagonal-example"
   environment: "development"
   service_version: "1.0.0"
   metrics_interval: 60s

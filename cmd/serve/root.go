@@ -1,6 +1,3 @@
-/*
-Copyright © 2026 NAME HERE akaporn.katip@gmail.com
-*/
 package serve
 
 import (

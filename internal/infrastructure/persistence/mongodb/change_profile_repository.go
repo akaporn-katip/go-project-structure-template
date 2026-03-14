@@ -33,7 +33,7 @@ type CustomerProfileRepository struct {
 func NewCustomerProfileRepository(coll CollectionExecutor) *CustomerProfileRepository {
 	return &CustomerProfileRepository{
 		coll:   coll,
-		tracer: otel.Tracer("api.katipwork.com/crm/internal/infrastructure/persistence/mongodb/customer_profile_repository"),
+		tracer: otel.Tracer("github.com/akaporn-katip/go-project-structure-template/internal/infrastructure/persistence/mongodb/customer_profile_repository"),
 	}
 }
 

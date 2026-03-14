@@ -3,6 +3,7 @@ package migrate
 import (
 	"fmt"
 
+	"github.com/akaporn-katip/go-project-structure-template/config"
 	"github.com/golang-migrate/migrate/v4"
 
 	_ "github.com/golang-migrate/migrate/v4/source/file"
@@ -24,8 +25,8 @@ func (s *SQLMigrator) Down() error {
 	return s.migrator.Down()
 }
 
-func NewSqlMigrator(dsn string) (*SQLMigrator, error) {
-	mt, err := migrate.New("file://migrate/sql", dsn)
+func NewSqlMigrator(cfg config.PostgresConfig) (*SQLMigrator, error) {
+	mt, err := migrate.New("file://migrate/sql", cfg.DSN)
 
 	if err != nil {
 		return nil, err
@@ -48,8 +49,8 @@ func (s *MongoMigrator) Down() error {
 	return s.migrator.Down()
 }
 
-func NewMongoMigrator(dsn string) (*SQLMigrator, error) {
-	mt, err := migrate.New("file://migrate/mongo", dsn)
+func NewMongoMigrator(cfg config.MongoConfig) (*SQLMigrator, error) {
+	mt, err := migrate.New("file://migrate/mongo", cfg.URI)
 
 	if err != nil {
 		return nil, err
@@ -60,12 +61,12 @@ func NewMongoMigrator(dsn string) (*SQLMigrator, error) {
 	}, nil
 }
 
-func NewMigrator(dbType string, dsn string) (Migrator, error) {
-	switch dbType {
-	case "postgres", "sqlite3":
-		return NewSqlMigrator(dsn)
+func NewMigrator(cfg config.DatabaseConfig) (Migrator, error) {
+	switch cfg.Type {
+	case "postgres":
+		return NewSqlMigrator(cfg.Postgres)
 	case "mongodb":
-		return NewMongoMigrator(dsn)
+		return NewMongoMigrator(cfg.MongoDB)
 	default:
 		return nil, fmt.Errorf("unsupported driver")
 	}

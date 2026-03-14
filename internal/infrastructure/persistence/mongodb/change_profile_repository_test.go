@@ -22,7 +22,7 @@ type MockSingleResult struct {
 
 func (m *MockSingleResult) Decode(v interface{}) error {
 	args := m.Called(v)
-	
+
 	if args.Get(0) != nil {
 		return args.Error(0)
 	}
@@ -32,7 +32,7 @@ func (m *MockSingleResult) Decode(v interface{}) error {
 		src := args.Get(1).(mongodb.CustomerProfileModel)
 		*dest = src
 	}
-	
+
 	return args.Error(0)
 }
 
@@ -60,6 +60,91 @@ func (m *MockCollectionExecutor) FindOne(ctx context.Context, filter interface{}
 		return nil
 	}
 	return args.Get(0).(mongodb.SingleResult)
+}
+
+func (m *MockCollectionExecutor) Aggregate(ctx context.Context, pipeline interface{}, opts ...*options.AggregateOptions) (*mongo.Cursor, error) {
+	args := m.Called(ctx, pipeline, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*mongo.Cursor), args.Error(1)
+}
+
+func (m *MockCollectionExecutor) BulkWrite(ctx context.Context, models []mongo.WriteModel, opts ...*options.BulkWriteOptions) (*mongo.BulkWriteResult, error) {
+	args := m.Called(ctx, models, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*mongo.BulkWriteResult), args.Error(1)
+}
+
+func (m *MockCollectionExecutor) CountDocuments(ctx context.Context, filter interface{}, opts ...*options.CountOptions) (int64, error) {
+	args := m.Called(ctx, filter, opts)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+func (m *MockCollectionExecutor) DeleteMany(ctx context.Context, filter interface{}, opts ...*options.DeleteOptions) (*mongo.DeleteResult, error) {
+	args := m.Called(ctx, filter, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*mongo.DeleteResult), args.Error(1)
+}
+
+func (m *MockCollectionExecutor) DeleteOne(ctx context.Context, filter interface{}, opts ...*options.DeleteOptions) (*mongo.DeleteResult, error) {
+	args := m.Called(ctx, filter, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*mongo.DeleteResult), args.Error(1)
+}
+
+func (m *MockCollectionExecutor) Distinct(ctx context.Context, fieldName string, filter interface{}, opts ...*options.DistinctOptions) ([]interface{}, error) {
+	args := m.Called(ctx, fieldName, filter, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]interface{}), args.Error(1)
+}
+
+func (m *MockCollectionExecutor) Find(ctx context.Context, filter interface{}, opts ...*options.FindOptions) (*mongo.Cursor, error) {
+	args := m.Called(ctx, filter, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*mongo.Cursor), args.Error(1)
+}
+
+func (m *MockCollectionExecutor) FindOneAndDelete(ctx context.Context, filter interface{}, opts ...*options.FindOneAndDeleteOptions) mongodb.SingleResult {
+	args := m.Called(ctx, filter, opts)
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(mongodb.SingleResult)
+}
+
+func (m *MockCollectionExecutor) FindOneAndReplace(ctx context.Context, filter interface{}, replacement interface{}, opts ...*options.FindOneAndReplaceOptions) mongodb.SingleResult {
+	args := m.Called(ctx, filter, replacement, opts)
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(mongodb.SingleResult)
+}
+
+func (m *MockCollectionExecutor) FindOneAndUpdate(ctx context.Context, filter interface{}, update interface{}, opts ...*options.FindOneAndUpdateOptions) mongodb.SingleResult {
+	args := m.Called(ctx, filter, update, opts)
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(mongodb.SingleResult)
+}
+
+func (m *MockCollectionExecutor) InsertMany(ctx context.Context, documents []interface{}, opts ...*options.InsertManyOptions) (*mongo.InsertManyResult, error) {
+	args := m.Called(ctx, documents, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*mongo.InsertManyResult), args.Error(1)
 }
 
 func TestCustomerProfileRepository_Create(t *testing.T) {
@@ -159,7 +244,7 @@ func TestCustomerProfileRepository_FindByEmail(t *testing.T) {
 
 		expectedEmail := "notfound@example.com"
 		filter := bson.M{"email": expectedEmail}
-		
+
 		mockColl.On("FindOne", mock.Anything, filter, mock.Anything).Return(mockResult)
 		mockResult.On("Decode", mock.Anything).Return(mongo.ErrNoDocuments)
 
@@ -241,7 +326,7 @@ func TestCustomerProfileRepository_FindByID(t *testing.T) {
 
 		id := customerprofile.GenerateCustomerID()
 		filter := bson.M{"_id": id.String()}
-		
+
 		mockColl.On("FindOne", mock.Anything, filter, mock.Anything).Return(mockResult)
 		mockResult.On("Decode", mock.Anything).Return(mongo.ErrNoDocuments)
 

@@ -27,7 +27,7 @@ type UnitOfWork struct {
 }
 
 func NewUnitOfWork(db *sqlx.DB) (*UnitOfWork, error) {
-	meter := otel.Meter("api.katipwork.com/crm/internal/infrastructure/persistence/postgres/unit_of_work")
+	meter := otel.Meter("github.com/akaporn-katip/go-project-structure-template/internal/infrastructure/persistence/postgres/unit_of_work")
 	transactionCounter, err := meter.Int64Counter(
 		"db.transaction.total",
 		metric.WithDescription("Total number of database transactions"),
@@ -68,7 +68,7 @@ func NewUnitOfWork(db *sqlx.DB) (*UnitOfWork, error) {
 
 	return &UnitOfWork{
 		db:     db,
-		tracer: otel.Tracer("api.katipwork.com/crm/internal/infrastructure/persistence/postgres/unit_of_work"),
+		tracer: otel.Tracer("github.com/akaporn-katip/go-project-structure-template/internal/infrastructure/persistence/postgres/unit_of_work"),
 
 		// metrics
 		meter:                meter,
