@@ -37,6 +37,7 @@ func NewRouter(
 	api := r.Group("/crm-api/v1")
 	api.GET("/health", healthCheck)
 	api.POST("/customer-profile", handlers.CustomerProfileHandler.Create)
+	api.GET("/customer-profile/:id", handlers.CustomerProfileHandler.FindByID)
 	return r
 }
 

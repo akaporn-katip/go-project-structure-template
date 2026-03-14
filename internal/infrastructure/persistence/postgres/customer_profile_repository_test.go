@@ -59,7 +59,7 @@ func TestFindByEmail_Success(t *testing.T) {
 		FirstName:   "John",
 		LastName:    "Doe",
 		Email:       "john.doe@example.com",
-		DateOfBirth: "1990-01-01",
+		DateOfBirth: "19900101",
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}

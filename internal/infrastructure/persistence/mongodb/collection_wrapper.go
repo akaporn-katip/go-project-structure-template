@@ -14,10 +14,16 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// SingleResult is an interface describing a single result from MongoDB.
+type SingleResult interface {
+	Decode(v interface{}) error
+	Err() error
+}
+
 // CollectionExecutor replaces DatabaseExecutor
 type CollectionExecutor interface {
 	InsertOne(ctx context.Context, document interface{}, opts ...*options.InsertOneOptions) (*mongo.InsertOneResult, error)
-	FindOne(ctx context.Context, filter interface{}, opts ...*options.FindOneOptions) *mongo.SingleResult
+	FindOne(ctx context.Context, filter interface{}, opts ...*options.FindOneOptions) SingleResult
 	// Add UpdateOne, DeleteOne, etc., as needed
 }
 
@@ -92,7 +98,7 @@ func (cw *CollectionWrapper) InsertOne(ctx context.Context, document interface{}
 	return res, err
 }
 
-func (cw *CollectionWrapper) FindOne(ctx context.Context, filter interface{}, opts ...*options.FindOneOptions) *mongo.SingleResult {
+func (cw *CollectionWrapper) FindOne(ctx context.Context, filter interface{}, opts ...*options.FindOneOptions) SingleResult {
 	start := time.Now()
 	_, span := cw.tracer.Start(ctx, "CollectionWrapper.FindOne", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()

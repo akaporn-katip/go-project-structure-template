@@ -76,13 +76,13 @@ func TestNewDateOfBirth(t *testing.T) {
 	}{
 		{
 			name:        "full date",
-			dob:         "1990-12-25",
+			dob:         "19901225",
 			expectError: false,
 			precision:   FullDate,
 		},
 		{
 			name:        "year and month",
-			dob:         "1990-12",
+			dob:         "199012",
 			expectError: false,
 			precision:   MonthYear,
 		},
@@ -94,12 +94,12 @@ func TestNewDateOfBirth(t *testing.T) {
 		},
 		{
 			name:        "future date",
-			dob:         "2030-01-01",
+			dob:         "20300101",
 			expectError: true,
 		},
 		{
 			name:        "too old date",
-			dob:         "1800-01-01",
+			dob:         "18000101",
 			expectError: true,
 		},
 		{
@@ -138,7 +138,7 @@ func TestNewDateOfBirth(t *testing.T) {
 }
 
 func TestDateOfBirthMethods(t *testing.T) {
-	dob, err := NewDateOfBirth("1990-12-25")
+	dob, err := NewDateOfBirth("19901225")
 	if err != nil {
 		t.Fatalf("Expected no error but got %v", err)
 	}
@@ -155,7 +155,7 @@ func TestDateOfBirthMethods(t *testing.T) {
 		t.Errorf("Expected day 25 but got %d", dob.Day())
 	}
 
-	expectedString := "1990-12-25"
+	expectedString := "19901225"
 	if dob.String() != expectedString {
 		t.Errorf("Expected string %s but got %s", expectedString, dob.String())
 	}
@@ -244,7 +244,7 @@ func TestNewIdentityCard(t *testing.T) {
 		Title:       "Mr.",
 		Firstname:   "John",
 		Lastname:    "Doe",
-		DateOfBirth: "1990-01-01",
+		DateOfBirth: "19900101",
 		IssueDate:   "2020-01-01",
 		ExpiryDate:  "2030-01-01",
 		Address:     *validAddress,

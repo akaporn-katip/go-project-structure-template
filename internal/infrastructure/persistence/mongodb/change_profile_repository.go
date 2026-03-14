@@ -89,6 +89,33 @@ func (cp *CustomerProfileRepository) FindByEmail(ctx context.Context, email cust
 	return entity, nil
 }
 
+func (cp *CustomerProfileRepository) FindByID(ctx context.Context, id customerprofile.CustomerID) (*customerprofile.CustomerProfile, error) {
+	_, span := cp.tracer.Start(ctx, "CustomerProfileRepository.FindByID")
+	defer span.End()
+
+	var customer CustomerProfileModel
+	filter := bson.M{"_id": id.String()}
+
+	// FindOne returns a *mongo.SingleResult, we call Decode() to map it to our struct
+	err := cp.coll.FindOne(ctx, filter).Decode(&customer)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			span.SetStatus(codes.Ok, err.Error())
+			return nil, customerprofile.NewFindByEmailNotFoundError(id.String())
+		}
+		span.SetStatus(codes.Error, err.Error())
+		return nil, domainerrors.NewInternalError("fail to get customer profile by id", err)
+	}
+
+	entity, err := customer.toDomain()
+	if err != nil {
+		return nil, err
+	}
+
+	span.SetStatus(codes.Ok, "")
+	return entity, nil
+}
+
 func (customer *CustomerProfileModel) toDomain() (*customerprofile.CustomerProfile, error) {
 	return customerprofile.ReconstructCustomer(customer.ID, customerprofile.ReconstructCustomerProps{
 		Title:       customer.Title,

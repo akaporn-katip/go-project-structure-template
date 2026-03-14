@@ -10,12 +10,14 @@ import (
 
 type CustomerProfileHandler struct {
 	createCustomerProfileHandler *customerprofileapp.CreateCustomerProfileHandler
+	findByIdHandler              *customerprofileapp.FindByIdQueryHandler
 	validator                    *validator.Validate
 }
 
-func NewCustomerProfileHandler(createCustomerProfileHandler *customerprofileapp.CreateCustomerProfileHandler, validator *validator.Validate) *CustomerProfileHandler {
+func NewCustomerProfileHandler(createCustomerProfileHandler *customerprofileapp.CreateCustomerProfileHandler, findByIdHandler *customerprofileapp.FindByIdQueryHandler, validator *validator.Validate) *CustomerProfileHandler {
 	return &CustomerProfileHandler{
 		createCustomerProfileHandler: createCustomerProfileHandler,
+		findByIdHandler:              findByIdHandler,
 		validator:                    validator,
 	}
 }
@@ -62,4 +64,23 @@ func (c *CustomerProfileHandler) Create(ctx *gin.Context) {
 	)
 
 	ResponseOK(ctx, customerprofileapp.ToCustomerIDResponse(id))
+}
+
+func (c *CustomerProfileHandler) FindByID(ctx *gin.Context) {
+	reqCtx := ctx.Request.Context()
+	id := ctx.Param("id")
+	command := customerprofileapp.FindByIDQuery{
+		ID: id,
+	}
+
+	customer, err := c.findByIdHandler.Handle(reqCtx, command)
+	if err != nil {
+		slog.ErrorContext(reqCtx, "Failed to find customer by id",
+			"error", err.Error(),
+		)
+		RespondDomainError(ctx, err)
+		return
+	}
+
+	ResponseOK(ctx, customerprofileapp.ToCustomerResponse(customer))
 }

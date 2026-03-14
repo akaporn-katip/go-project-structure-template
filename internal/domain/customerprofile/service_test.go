@@ -135,7 +135,7 @@ func TestCheckEmailAlreadyExists_EmailExists(t *testing.T) {
 		Title:       "Mr",
 		Firstname:   "John",
 		Lastname:    "Doe",
-		DateOfBirth: "1990-01-01",
+		DateOfBirth: "19900101",
 		Email:       "existing@example.com",
 	})
 

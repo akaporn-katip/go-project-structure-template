@@ -134,12 +134,13 @@ func Serve(configPath string) {
 	// Initialize Application Layer
 	// ====================================================================
 	createCustomerProfileHandler := customerprofileapp.NewCreateCustomerProfileCommandHandler(uow)
+	findCustomerByIdHandler := customerprofileapp.NewFindByIdQueryHandler(uow)
 
 	// ====================================================================
 	// Initialize HTTP Layer with Metrics Middleware
 	// ====================================================================
 	validate := validator.New()
-	customerProfileHandler := handler.NewCustomerProfileHandler(createCustomerProfileHandler, validate)
+	customerProfileHandler := handler.NewCustomerProfileHandler(createCustomerProfileHandler, findCustomerByIdHandler, validate)
 
 	// Create Middleware
 	traceMiddleware := middleware.NewTraceMiddleware(cfg.Observability.ServiceName)

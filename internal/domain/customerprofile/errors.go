@@ -52,3 +52,7 @@ func NewEmailAlreadyExistsError(email string) *domainerrors.DomainError {
 func NewFindByEmailNotFoundError(email string) *domainerrors.DomainError {
 	return domainerrors.NewNotFoundError("customer profile by email not found").WithDetail("email", email)
 }
+
+func NewFindByIDNotFoundError() *domainerrors.DomainError {
+	return domainerrors.NewNotFoundError("customer profile by id not found")
+}

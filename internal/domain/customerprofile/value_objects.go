@@ -291,6 +291,10 @@ func NewIdentityCard(input IdentityCardInput) (*IdentityCard, error) {
 	}, nil
 }
 
+func (id IdentityCard) ID() string {
+	return id.number
+}
+
 func isValidThaiIDNumber(id string) bool {
 	// Thai ID must be 13 digits
 	if len(id) != 13 {
@@ -637,9 +641,9 @@ func NewDateOfBirth(dob string) (*DateOfBirth, error) {
 		layout    string
 		precision DatePrecision
 	}{
-		{"2006-01-02", FullDate}, // 1990-12-25
-		{"2006-01", MonthYear},   // 1990-12
-		{"2006", YearOnly},       // 1990
+		{"20060102", FullDate}, // 1990-12-25
+		{"200601", MonthYear},  // 1990-12
+		{"2006", YearOnly},     // 1990
 	}
 
 	for _, format := range formats {
@@ -697,9 +701,9 @@ func (d DateOfBirth) String() string {
 	case YearOnly:
 		return fmt.Sprintf("%d", d.date.Year())
 	case MonthYear:
-		return d.date.Format("2006-01")
+		return d.date.Format("200601")
 	case FullDate:
-		return d.date.Format("2006-01-02")
+		return d.date.Format("20060102")
 	default:
 		return d.date.String()
 	}

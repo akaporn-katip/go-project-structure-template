@@ -10,7 +10,7 @@ func TestCreateCustomer(t *testing.T) {
 		Title:       "Mr.",
 		Firstname:   "John",
 		Lastname:    "Doe",
-		DateOfBirth: "1990-01-01",
+		DateOfBirth: "19900101",
 		Email:       "john.doe@example.com",
 	}
 
@@ -76,7 +76,7 @@ func TestReconstructCustomer(t *testing.T) {
 		Title:       "Ms.",
 		Firstname:   "Jane",
 		Lastname:    "Smith",
-		DateOfBirth: "1985-06-15",
+		DateOfBirth: "19850615",
 		Email:       "jane.smith@example.com",
 	}
 	createdAt := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -128,7 +128,7 @@ func TestCustomerProfileBusinessMethods(t *testing.T) {
 		Title:       "", // Empty title
 		Firstname:   "Bob",
 		Lastname:    "Johnson",
-		DateOfBirth: "1995-03-20",
+		DateOfBirth: "19950320",
 		Email:       "bob.johnson@example.com",
 	}
 
@@ -148,7 +148,7 @@ func TestCustomerProfileBusinessMethods(t *testing.T) {
 		Title:       "Master",
 		Firstname:   "Young",
 		Lastname:    "Person",
-		DateOfBirth: "2010-01-01", // 14 years old
+		DateOfBirth: "20100101", // 14 years old
 		Email:       "young.person@example.com",
 	}
 
